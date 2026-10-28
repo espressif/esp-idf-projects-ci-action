@@ -1,0 +1,88 @@
+name: Cached submodule checkout
+description: >-
+  Initialize git submodules shallow, in parallel, with retries, backed by a
+  cache shared across the whole workflow run. One job populates the cache
+  (save-cache: 'true'); every other job restores it and materializes working
+  trees without network access.
+inputs:
+  save-cache:
+    description: >-
+      Save the submodule cache after fetching. Enable in exactly one job per
+      workflow run; all other jobs restore only.
+    required: false
+    default: 'false'
+  materialize:
+    description: >-
+      Check out submodule working trees even on a cache hit. Jobs that
+      compile submodule sources need this; a cache-populating job does not.
+    required: false
+    default: 'true'
+outputs:
+  cache-hit:
+    description: "'true' when the submodule cache was restored"
+    value: ${{ steps.submodules-cache.outputs.cache-hit }}
+  cache-key:
+    description: Full cache key, submodules-<gitlink hash>
+    value: submodules-${{ steps.submodule-key.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - name: Trust workspace git directory
+      # Container jobs run git as a different user than the workspace owner.
+      # actions/checkout writes its safe.directory exception to a temporary
+      # global config that later steps don't see, so add our own.
+      shell: bash
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - name: Compute submodule cache key
+      id: submodule-key
+      shell: bash
+      # Key on all submodule pointers (gitlinks); changes only when a
+      # submodule is bumped. Never use restore-keys: a partial hit would
+      # silently mix submodule versions.
+      run: echo "key=$(git ls-tree -r HEAD | awk '$2 == "commit"' | sha1sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+    - name: Restore submodule cache
+      id: submodules-cache
+      # .git/modules holds the shallow submodule clones; the init step
+      # materializes working trees from it without network access.
+      uses: actions/cache/restore@v5
+      with:
+        path: .git/modules
+        key: submodules-${{ steps.submodule-key.outputs.key }}
+    - name: Init submodules (shallow, with retry)
+      # On a cache hit this materializes working trees from .git/modules
+      # offline; a cache-populating job skips it via materialize: 'false'.
+      # On a miss it mirrors checkout's submodules: 'true' (fetch-depth 1)
+      # plus:
+      # - retries: a single transient network failure used to fail the job
+      # - --jobs 8: checkout fetches submodules sequentially, dominated by
+      #   the slowest host
+      # On repeated failure, each submodule is retried individually so the
+      # log names the exact one and its error.
+      if: steps.submodules-cache.outputs.cache-hit != 'true' || inputs.materialize == 'true'
+      shell: bash
+      run: |
+        echo "git version: $(git --version)"
+        for attempt in 1 2 3; do
+          if git -c protocol.version=2 submodule update --init --force --depth 1 --jobs 8; then
+            exit 0
+          fi
+          echo "::warning::parallel submodule update failed (attempt ${attempt})"
+          sleep 10
+        done
+        echo "::error::parallel updates failed 3 times; diagnosing per-submodule"
+        failed=0
+        while read -r _ path; do
+          echo "--- submodule: ${path}"
+          git -c protocol.version=2 submodule update --init --force --depth 1 "${path}" || failed=1
+        done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$')
+        git submodule status
+        exit ${failed}
+    - name: Save submodule cache
+      # Best-effort: another concurrent run may legitimately populate the
+      # same key; the content is identical either way.
+      if: inputs.save-cache == 'true' && steps.submodules-cache.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@v5
+      with:
+        path: .git/modules
+        key: submodules-${{ steps.submodule-key.outputs.key }}
