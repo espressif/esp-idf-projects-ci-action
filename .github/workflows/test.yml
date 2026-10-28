@@ -1,0 +1,16 @@
+name: Test CI helpers
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test CI helpers
+        run: python3 -m unittest discover -s .github/tests -p 'test_*.py'
