@@ -50,6 +50,8 @@ jobs:
             /.github/actions/
             /.github/tests/
             /.github/get_ci_changes.py
+            # WorkflowDiffSyntaxTests reads the orchestrator itself.
+            /.github/workflows/build_and_run_apps.yml
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Test CI helpers
