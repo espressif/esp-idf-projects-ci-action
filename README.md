@@ -125,21 +125,14 @@ jobs:
       checks: write
       actions: read
     uses: espressif/esp-idf-projects-ci-action/.github/workflows/build_and_run_apps.yml@v1
-
-  # Preserves the stable 'CI Gate' check name for branch protection.
-  ci-gate:
-    name: CI Gate
-    if: always()
-    needs: pipeline
-    runs-on: ubuntu-22.04
-    steps:
-      - run: test "${{ needs.pipeline.result }}" != "failure" && test "${{ needs.pipeline.result }}" != "cancelled"
+    with:
+      idf_versions: '["release-v5.4", "release-v6.0", "latest"]'
 ```
 
 Consumers supply in their own repository:
 
-- `.github/ci-matrix.json` — the SDK Docker tags to build and test against
-  (`[{"idf_version": "release-v5.4"}, ...]`)
+- the `idf_versions` input — JSON array of `espressif/idf` Docker tags to
+  build and test against
 - `.idf_build_apps.toml`, `.build-test-rules.yml`, manifests
 - pytest configuration (`pytest.ini`, root `conftest.py`) and test apps
 
@@ -150,6 +143,11 @@ tokens are the consumer's. CI helpers (`.github/actions/ci-tools`,
 revision of the called workflow, so every consumer runs the same tooling.
 The caller workflow above documents the permission superset the called jobs
 need; job-level permissions inside the pipeline narrow it further.
+
+Called jobs report with the caller job's name as prefix, so the stable
+status check for branch protection is `CI pipeline / CI Gate` — keep the
+caller job name unchanged, and never require matrix job names directly
+(they change with the `idf_versions` input).
 
 Pipeline behavior (change selection, shards, planning, reports, artifacts)
 is documented in

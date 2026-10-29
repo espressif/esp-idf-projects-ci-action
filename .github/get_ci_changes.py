@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select changed root-level components for this repository's CI caller."""
+"""Select changed root-level components for the calling repository's CI."""
 
 import argparse
 import json
@@ -17,11 +17,11 @@ def main():
         if '/' in file and not file.startswith('.')
         and (Path(file.split('/')[0]).is_dir() or not Path(file.split('/')[0]).exists())
     })
-    # Changes to discovery or its inputs can affect every component. In
-    # particular, adding a version must exercise it without a manual PR label.
+    # Changes to discovery or its inputs can affect every component. SDK
+    # versions are the caller workflow's idf_versions input, already covered
+    # by the .github/workflows/ watch.
     full_run = any(
         file in {
-            '.github/ci-matrix.json', '.github/get_ci_changes.py',
             '.idf_build_apps.toml', '.build-test-rules.yml', 'pytest.ini', 'conftest.py',
         } or file.startswith(('.github/actions/', '.github/workflows/'))
         for file in files

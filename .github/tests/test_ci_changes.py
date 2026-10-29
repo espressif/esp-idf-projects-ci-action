@@ -23,7 +23,9 @@ class ChangeSelectionTests(unittest.TestCase):
             return dict(line.split('=', 1) for line in output.read_text().splitlines())
 
     def test_adding_version_runs_full_inventory(self):
-        result = self.select(['.github/ci-matrix.json'])
+        # SDK versions are the caller workflow's idf_versions input; editing
+        # it changes the caller workflow file.
+        result = self.select(['.github/workflows/build_and_run_apps.yml'])
         self.assertEqual(result, {'has_changes': 'true', 'modified_files': '[]', 'modified_components': '[]'})
 
     def test_global_policy_changes_clear_component_filter(self):

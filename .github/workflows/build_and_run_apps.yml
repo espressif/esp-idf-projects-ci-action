@@ -4,10 +4,14 @@ name: Build and Run Apps
 # keep a thin caller workflow owning triggers (pull_request/push/schedule)
 # and concurrency, and call this workflow; the pipeline runs in the caller's
 # context (its checkout, caches, artifacts and tokens). Consumers supply
-# .github/ci-matrix.json, .idf_build_apps.toml, manifests and pytest
-# configuration.
+# .idf_build_apps.toml, manifests and pytest configuration.
 on:
   workflow_call:
+    inputs:
+      idf_versions:
+        description: JSON array of espressif/idf Docker tags to build and test against
+        required: true
+        type: string
 
 jobs:
   prepare:
@@ -22,7 +26,6 @@ jobs:
       has_changes: ${{ steps.find_changes.outputs.has_changes }}
       modified_files: ${{ steps.find_changes.outputs.modified_files }}
       modified_components: ${{ steps.find_changes.outputs.modified_components }}
-      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v5
         # No submodules here: unit tests and change detection need metadata
@@ -60,9 +63,6 @@ jobs:
           cd /
           git config --global --add safe.directory $build_dir
           cd -
-      - name: Read caller version matrix
-        id: matrix
-        run: echo "matrix=$(jq -c . .github/ci-matrix.json)" >> "$GITHUB_OUTPUT"
       - name: Get labels
         id: get_labels
         if: github.event_name == 'pull_request'
@@ -118,7 +118,8 @@ jobs:
     if: github.event_name != 'pull_request' || needs.prepare.outputs.test_all_apps == '1' || needs.prepare.outputs.has_changes == 'true'
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+      matrix:
+        idf_version: ${{ fromJSON(inputs.idf_versions) }}
     uses: ./.github/workflows/reusable-ci.yml
     with:
       idf_version: ${{ matrix.idf_version }}
@@ -207,10 +208,10 @@ jobs:
 
   # Single stable status check intended for branch protection: it always
   # runs, and fails when any job failed or was cancelled. Skipped jobs
-  # (e.g. the version pipelines on CI-only PRs) count as success. Require
-  # this check (or the caller's wrapper) in branch protection - matrix job
-  # names change whenever the matrix changes and must not be required
-  # directly.
+  # (e.g. the version pipelines on CI-only PRs) count as success. Called
+  # jobs report with the caller job's name as prefix, so consumers require
+  # '<caller job> / CI Gate' in branch protection - matrix job names change
+  # whenever the matrix changes and must not be required directly.
   ci-gate:
     name: CI Gate
     if: always()
